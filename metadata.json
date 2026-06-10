@@ -1,0 +1,6 @@
+{
+  "name": "Python Tkinter Cooking Game",
+  "description": "An interactive web simulator and complete Python Tkinter code explorer for a beginner-friendly classroom-ready cooking game.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
