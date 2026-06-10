@@ -19,10 +19,15 @@ import {
   HelpCircle,
   Code2,
   Terminal,
-  Info
+  Info,
+  Volume2,
+  VolumeX,
+  Sparkles,
+  Music
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PYTHON_CODE_STRING } from './pythonCode';
+import { sysAudio } from './audio';
 
 // --- CUSTOMER PERSPECTIVES ---
 interface Customer {
@@ -129,6 +134,83 @@ export default function App() {
   const [feedback, setFeedback] = useState<{ type: 'success' | 'fail' | null; message: string }>({ type: null, message: '' });
   const [copied, setCopied] = useState(false);
 
+  // New SFX and Animation States
+  const [audioMuted, setAudioMuted] = useState(false);
+  const [audioVolume, setAudioVolume] = useState(50); // 0 to 100
+  const [isPlayingBgm, setIsPlayingBgm] = useState(false);
+  const [level, setLevel] = useState(1);
+  const [ordersServed, setOrdersServed] = useState(0);
+  const [scorePops, setScorePops] = useState<{ id: number; text: string; offsetLeft: number }[]>([]);
+  const [particles, setParticles] = useState<{ id: number; char: string; x: number; y: number; scale: number; rotation: number; vx: number; vy: number }[]>([]);
+  const [encouragingText, setEncouragingText] = useState('');
+  const [levelCompletePop, setLevelCompletePop] = useState<{ active: boolean; level: number; message: string }>({ active: false, level: 1, message: '' });
+
+  // Play standard UI clicks
+  const touchClick = () => {
+    sysAudio.playClick();
+  };
+
+  // Sync volume and mute configurations
+  useEffect(() => {
+    sysAudio.setMute(audioMuted);
+  }, [audioMuted]);
+
+  useEffect(() => {
+    sysAudio.setVolume(audioVolume / 100);
+  }, [audioVolume]);
+
+  // Activate background music during high intensity gameplay rounds
+  useEffect(() => {
+    if (gameState === 'playing' && !audioMuted) {
+      sysAudio.startBgm();
+      setIsPlayingBgm(true);
+    } else {
+      sysAudio.stopBgm();
+      setIsPlayingBgm(false);
+    }
+    return () => {
+      sysAudio.stopBgm();
+    };
+  }, [gameState, audioMuted]);
+
+  // Particle Engine Frame loop (Custom aesthetic physics solver)
+  useEffect(() => {
+    if (particles.length === 0) return;
+    const interval = setTimeout(() => {
+      setParticles(prev => 
+        prev
+          .map(p => ({
+            ...p,
+            x: p.x + p.vx,
+            y: p.y + p.vy,
+            vy: p.vy + 0.45, // gravity pulls elements down
+            rotation: p.rotation + p.vx * 1.5,
+          }))
+          .filter(p => p.y < 350 && Math.abs(p.x) < 400) // prune elements outside field
+      );
+    }, 28);
+    return () => clearTimeout(interval);
+  }, [particles]);
+
+  const spawnParticles = () => {
+    const emojis = ['🌟', '✨', '🪙', '❤️', '🍳', '🍩', '🎉', '🍟', '🍕', '🌸'];
+    const bouncers = Array.from({ length: 14 }).map((_, i) => {
+      const angle = (i / 14) * Math.PI * 2 + (Math.random() - 0.5) * 0.35;
+      const force = 8 + Math.random() * 9;
+      return {
+        id: Date.now() + i,
+        char: emojis[Math.floor(Math.random() * emojis.length)],
+        x: 0,
+        y: -10,
+        scale: 0.6 + Math.random() * 0.7,
+        rotation: Math.random() * 360,
+        vx: Math.cos(angle) * force,
+        vy: Math.sin(angle) * force - 4, // boost graphics upwards initially
+      };
+    });
+    setParticles(bouncers);
+  };
+
   // Leaderboard entries
   const [leaderboard, setLeaderboard] = useState<{name: string, score: number, difficulty: string}[]>(() => {
     const saved = localStorage.getItem('cooking_leaderboard');
@@ -184,6 +266,7 @@ export default function App() {
 
   // Handle Order Failure
   const handleOrderFailure = (msg: string) => {
+    sysAudio.playError();
     setLives(prev => {
       const nextLives = prev - 1;
       setFeedback({ type: 'fail', message: `${msg} Lost 1 Heart! ❤️` });
@@ -194,6 +277,7 @@ export default function App() {
 
       // Trigger next action
       if (nextLives <= 0) {
+        sysAudio.playGameOver();
         setGameState('gameover');
         setHasSavedScore(false);
         setPlayerName('');
@@ -206,8 +290,11 @@ export default function App() {
 
   // Start the Cooking game
   const handleStartGame = () => {
+    touchClick();
     setScore(0);
     setLives(3);
+    setLevel(1);
+    setOrdersServed(0);
     setCurrentIngredients([]);
     setGameState('playing');
     
@@ -253,8 +340,10 @@ export default function App() {
   const selectIngredient = (ing: string) => {
     if (currentIngredients.length >= 6) {
       // Limit to max 6 layers to keep interface pretty
+      sysAudio.playError();
       return;
     }
+    sysAudio.playIngredient();
     setCurrentIngredients(prev => [...prev, ing]);
   };
 
@@ -291,6 +380,65 @@ export default function App() {
       
       const coinsEarned = isSuperFast ? Math.floor(Math.random() * 4) + 6 : Math.floor(Math.random() * 3) + 3;
 
+      // Trigger floating score and coin pops
+      const nowId = Date.now();
+      setScorePops(prev => [
+        ...prev, 
+        { id: nowId, text: `+${scoreGain} Pts`, offsetLeft: -40 },
+        { id: nowId + 1, text: `+${coinsEarned} 🪙`, offsetLeft: 40 }
+      ]);
+      setTimeout(() => {
+        setScorePops(prev => prev.filter(p => p.id !== nowId && p.id !== nowId + 1));
+      }, 1500);
+
+      // Trigger beautiful particle bursts on serving plate!
+      spawnParticles();
+
+      // Trigger encouraging chef dialogue
+      const dialogues = [
+        "Great Job!", 
+        "Perfect Order!", 
+        "Excellent Chef!", 
+        "Fantastic Cooking!", 
+        "Gordon is Impressed!", 
+        "Michelin Quality!"
+      ];
+      setEncouragingText(dialogues[Math.floor(Math.random() * dialogues.length)]);
+      setTimeout(() => setEncouragingText(''), 2200);
+
+      // Track milestone towards the next academic cooking level!
+      setOrdersServed(prev => {
+        const nextOrders = prev + 1;
+        if (nextOrders >= 3) {
+          // Level milestone completed successfully!
+          setLevel(lvl => {
+            const nextLvl = lvl + 1;
+            sysAudio.playLevelUp();
+            setCoins(c => c + 15); // Level clear milestone coin bonus
+            
+            setLevelCompletePop({
+              active: true,
+              level: nextLvl - 1,
+              message: "Culinary Level Expanded!"
+            });
+
+            setTimeout(() => {
+              setLevelCompletePop({ active: false, level: 1, message: '' });
+            }, 3200);
+
+            return nextLvl;
+          });
+          return 0; // reset active orders progression tracker
+        } else {
+          // Play classic arpeggio on individual order completion
+          sysAudio.playSuccess();
+          setTimeout(() => {
+            sysAudio.playCoin();
+          }, 240);
+          return nextOrders;
+        }
+      });
+
       setScore(prev => prev + scoreGain);
       setCoins(prev => prev + coinsEarned);
 
@@ -312,6 +460,7 @@ export default function App() {
   // Unlock recipe from Coins shop
   const handleUnlockRecipe = (recipeName: string, cost: number) => {
     if (coins >= cost) {
+      sysAudio.playLevelUp();
       setCoins(prev => prev - cost);
       setRecipes(prev => ({
         ...prev,
@@ -320,6 +469,8 @@ export default function App() {
           unlocked: true
         }
       }));
+    } else {
+      sysAudio.playError();
     }
   };
 
@@ -590,7 +741,7 @@ export default function App() {
                 )}
               </AnimatePresence>
 
-              <div className="bg-white rounded-[32px] border-4 border-vibrant-text shadow-[8px_8px_0_0_#4A3728] overflow-hidden min-h-[580px] flex flex-col justify-between">
+              <div className="bg-white rounded-[32px] border-4 border-vibrant-text shadow-[8px_8px_0_0_#4A3728] overflow-hidden min-h-[580px] flex flex-col justify-between relative">
                 
                 {/* 1. START MENU STATE */}
                 {gameState === 'menu' && (
@@ -643,7 +794,45 @@ export default function App() {
                         {difficulty === 'Hard' && '⭐⭐⭐ 12 seconds per order — 2.0x score multiplier thrill.'}
                       </div>
                     </div>
- 
+
+                    {/* Audio & Feedback Settings Menu */}
+                    <div className="w-full max-w-md bg-white border-[3px] border-vibrant-text rounded-3xl p-5 mb-8 text-left shadow-[4px_4px_0_0_#4A3728]">
+                      <p className="text-xs font-black text-vibrant-text uppercase tracking-wider flex items-center gap-2 mb-3.5">
+                        <Music className="w-4 h-4 text-vibrant-orange animate-pulse" />
+                        Kitchen Soundboard Controls
+                      </p>
+                      
+                      <div className="flex items-center gap-4">
+                        <button
+                          type="button"
+                          onClick={() => { touchClick(); setAudioMuted(!audioMuted); }}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 border-vibrant-text font-black text-xs transition-all shadow-[2px_2px_0_0_#4A3728] active:translate-y-[1px] active:shadow-none shrink-0 ${
+                            !audioMuted 
+                              ? 'bg-vibrant-green text-white hover:bg-vibrant-green/95' 
+                              : 'bg-zinc-200 text-zinc-500 border-zinc-400 hover:bg-zinc-300'
+                          }`}
+                        >
+                          {audioMuted ? <VolumeX className="w-4.5 h-4.5 text-vibrant-red" /> : <Volume2 className="w-4.5 h-4.5 text-white" />}
+                          <span>{audioMuted ? "Muted" : "Active"}</span>
+                        </button>
+
+                        <div className="flex-1 flex items-center gap-2.5">
+                          <span className="text-[10px] font-black text-vibrant-text/65 uppercase tracking-wide">Volume:</span>
+                          <input 
+                            type="range" 
+                            min="0" 
+                            max="100" 
+                            value={audioVolume}
+                            onChange={(e) => {
+                              setAudioVolume(Number(e.target.value));
+                            }}
+                            className="flex-1 accent-vibrant-orange bg-vibrant-text/15 h-2 rounded-xl cursor-pointer"
+                          />
+                          <span className="font-mono text-xs font-black w-10 text-right">{audioVolume}%</span>
+                        </div>
+                      </div>
+                    </div>
+
                     {/* Primary Trigger Buttons */}
                     <div className="w-full max-w-xs space-y-4">
                       <button
@@ -668,28 +857,54 @@ export default function App() {
                     
                     {/* HUD Status Header */}
                     <div className="bg-vibrant-text text-white px-6 py-4 flex flex-wrap items-center justify-between gap-3 border-b-[3px] border-vibrant-text">
-                      <div className="flex items-center gap-6">
+                      <div className="flex flex-wrap items-center gap-6">
                         <div className="text-white font-black text-sm uppercase tracking-wider">
                           Score: <span className="text-vibrant-yellow font-black font-mono text-xl">{score}</span>
                         </div>
                         <div className="text-vibrant-yellow font-black text-sm uppercase tracking-wider flex items-center gap-1.5">
                           Wallet: <span className="font-mono text-xl text-white">🪙 {coins}</span>
                         </div>
+                        <div className="bg-vibrant-yellow text-vibrant-text font-black text-xs px-2.5 py-1 rounded-lg border-2 border-vibrant-text shadow-[1.5px_1.5px_0_0_#000] flex items-center gap-1">
+                          <ChefHat className="w-3.5 h-3.5" />
+                          <span>LEVEL {level}</span>
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <span className="text-white text-xs font-black uppercase tracking-wider mr-1">Chef Lives:</span>
-                        <div className="flex items-center gap-1.5 text-lg">
-                          {Array.from({ length: 3 }).map((_, i) => (
-                            <Heart 
-                              key={i} 
-                              className={`w-6 h-6 transition-transform ${
-                                i < lives 
-                                  ? 'text-vibrant-red fill-vibrant-red stroke-white stroke-2 scale-110 drop-shadow-[0_2px_0_rgba(0,0,0,0.2)]' 
-                                  : 'text-white/20 scale-90'
-                              }`} 
-                            />
-                          ))}
+                      <div className="flex items-center gap-5">
+                        {/* Real-time In-Gameplay Audio Controls */}
+                        <div className="hidden sm:flex items-center gap-2 bg-white/10 px-2.5 py-1 rounded-xl border border-white/10">
+                          <button
+                            type="button"
+                            onClick={() => { touchClick(); setAudioMuted(!audioMuted); }}
+                            className="text-white hover:text-vibrant-yellow transition-colors cursor-pointer focus:outline-none"
+                            title={audioMuted ? "Unmute Sound" : "Mute Sound"}
+                          >
+                            {audioMuted ? <VolumeX className="w-4 h-4 text-vibrant-red" /> : <Volume2 className="w-4 h-4 text-vibrant-yellow" />}
+                          </button>
+                          <input 
+                            type="range" 
+                            min="0" 
+                            max="100" 
+                            value={audioVolume}
+                            onChange={(e) => setAudioVolume(Number(e.target.value))}
+                            className="w-16 accent-vibrant-yellow bg-white/20 h-1 rounded-lg cursor-pointer"
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="text-white text-xs font-black uppercase tracking-wider mr-1">Chef Lives:</span>
+                          <div className="flex items-center gap-1.5 text-lg">
+                            {Array.from({ length: 3 }).map((_, i) => (
+                              <Heart 
+                                key={i} 
+                                className={`w-6 h-6 transition-transform ${
+                                  i < lives 
+                                    ? 'text-vibrant-red fill-vibrant-red stroke-white stroke-2 scale-110 drop-shadow-[0_2px_0_rgba(0,0,0,0.2)]' 
+                                    : 'text-white/20 scale-90'
+                                }`} 
+                              />
+                            ))}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -707,7 +922,17 @@ export default function App() {
                             Customer: {customer.name}
                           </div>
                           
-                          {currentOrder ? (
+                          {encouragingText ? (
+                            <motion.div 
+                              initial={{ scale: 0.8, rotate: -4 }}
+                              animate={{ scale: [1, 1.15, 1], rotate: [0, 4, -4, 0] }}
+                              className="py-3 px-5 bg-vibrant-yellow border-3 border-vibrant-text rounded-2xl flex items-center gap-2 justify-center shadow-[3px_3px_0_0_#4A3728] my-2"
+                            >
+                              <Sparkles className="w-5 h-5 text-vibrant-orange animate-spin shrink-0" />
+                              <span className="font-display font-black text-sm md:text-base text-vibrant-text uppercase tracking-wider">{encouragingText}</span>
+                              <Sparkles className="w-5 h-5 text-vibrant-orange animate-spin shrink-0" />
+                            </motion.div>
+                          ) : currentOrder ? (
                             <div className="space-y-2">
                               <p className="text-sm font-extrabold text-vibrant-text italic leading-snug">
                                 "{customer.dialogue}"
@@ -757,8 +982,41 @@ export default function App() {
                     <div className="p-6 grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch flex-1 bg-white">
                       
                       {/* Left Side: Cooking Plate stack visualization */}
-                      <div className="lg:col-span-5 flex flex-col justify-between items-center text-center bg-vibrant-bg/30 rounded-3xl border-[3px] border-vibrant-text p-5 shadow-[4px_4px_0_0_#4A3728]">
-                        <div className="space-y-1">
+                      <div className="lg:col-span-5 flex flex-col justify-between items-center text-center bg-vibrant-bg/30 rounded-3xl border-[3px] border-vibrant-text p-5 shadow-[4px_4px_0_0_#4A3728] relative overflow-hidden">
+                        
+                        {/* High Craft Celebration Particles Overlay */}
+                        <div className="absolute inset-0 pointer-events-none z-35 select-none">
+                          {particles.map(p => (
+                            <span 
+                              key={p.id}
+                              className="absolute left-1/2 bottom-20 text-2xl select-none"
+                              style={{
+                                transform: `translate(calc(-50% + ${p.x}px), ${p.y}px) scale(${p.scale}) rotate(${p.rotation}deg)`,
+                                transition: 'transform 0.03s linear',
+                              }}
+                            >
+                              {p.char}
+                            </span>
+                          ))}
+
+                          {/* Floating Score or Coin point animations */}
+                          {scorePops.map(pop => (
+                            <motion.div
+                              key={pop.id}
+                              initial={{ opacity: 1, y: 0, scale: 0.8 }}
+                              animate={{ opacity: 0, y: -100, scale: 1.3 }}
+                              transition={{ duration: 1.5, ease: "easeOut" }}
+                              className="absolute left-1/2 bottom-24 font-display font-black text-xs text-vibrant-text bg-vibrant-yellow border-2 border-vibrant-text px-2 md:px-3 py-1 rounded-xl shadow-[2px_2px_0_0_#4A3728] whitespace-nowrap"
+                              style={{
+                                transform: `translateX(calc(-50% + ${pop.offsetLeft}px))`,
+                              }}
+                            >
+                              {pop.text}
+                            </motion.div>
+                          ))}
+                        </div>
+
+                        <div className="space-y-1 z-10">
                           <p className="text-xs font-black text-vibrant-text uppercase tracking-widest">Active Platter (Serving Plate)</p>
                           <p className="text-[10px] font-bold text-vibrant-text/65">Ingredients stack upward as you tap</p>
                         </div>
@@ -966,6 +1224,46 @@ export default function App() {
 
                   </div>
                 )}
+
+                {/* Level Up Accomplishment Overlay banner */}
+                <AnimatePresence>
+                  {levelCompletePop.active && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.9 }}
+                      className="absolute inset-0 bg-vibrant-text bg-opacity-95 z-55 flex flex-col items-center justify-center p-8 text-center"
+                    >
+                      <motion.div
+                        animate={{ 
+                          scale: [1, 1.1, 1],
+                          rotate: [0, 5, -5, 0]
+                        }}
+                        transition={{ repeat: Infinity, duration: 1.5 }}
+                        className="bg-vibrant-yellow p-6 rounded-full border-4 border-white shadow-[0_8px_0_0_#DAB53F] mb-6 inline-flex"
+                      >
+                        <ChefHat className="w-16 h-16 text-vibrant-text" />
+                      </motion.div>
+
+                      <h3 className="text-3xl md:text-4xl font-display font-black text-vibrant-yellow tracking-tight uppercase leading-tight mb-2">
+                        LEVEL COMPLETED! 🍳
+                      </h3>
+                      
+                      <p className="text-white text-base md:text-lg font-black tracking-wide mb-4">
+                        Rank Advanced: Level {levelCompletePop.level} Chef!
+                      </p>
+
+                      <div className="bg-white border-3 border-vibrant-text px-6 py-2.5 rounded-2xl text-xs font-black text-vibrant-text shadow-[4px_4px_0_0_#F7CA18] flex items-center gap-1.5 justify-center">
+                        <span>🪙 LEVEL BONUS AWARDED:</span>
+                        <strong className="text-sm text-vibrant-orange font-mono">+15 COINS!</strong>
+                      </div>
+
+                      <p className="text-white/60 text-[10px] font-semibold mt-8 animate-pulse">
+                        Keep cooking! Preparing new culinary orders...
+                      </p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
               </div>
               

@@ -106,6 +106,7 @@ class CookingGameApp(tk.Tk):
         self.coins = 15  # Starts with some initial coins to spend or save!
         self.lives = 3
         self.difficulty = tk.StringVar(value="Easy")
+        self.audio_enabled = tk.BooleanVar(value=True) # AUDIO SETTINGS CONTROLLER
         self.unlocked_recipes = ["Classic Burger", "Pepperoni Pizza", "Sushi Roll"]
         self.leaderboard_file = "cooking_leaderboard.json"
         
@@ -136,6 +137,54 @@ class CookingGameApp(tk.Tk):
         self.container.grid_rowconfigure(0, weight=1)
         self.container.grid_columnconfigure(0, weight=1)
         self.show_frame("StartMenuFrame")
+
+    def play_sound(self, sound_type):
+        """Standard educational Sound Synthesizer Fallback for Tkinter Python.
+        Uses winsound on Windows for real retro beeps, runs in sub-threads 
+        to prevent any frame stutter or GUI lockups, and supports mute settings!"""
+        if not self.audio_enabled.get():
+            return
+        
+        import threading
+        def play_beep():
+            try:
+                import winsound
+            except ImportError:
+                winsound = None
+
+            if winsound:
+                try:
+                    if sound_type == "click":
+                        winsound.Beep(750, 60)
+                    elif sound_type == "ingredient":
+                        winsound.Beep(980, 80)
+                    elif sound_type == "success":
+                        winsound.Beep(1046, 120)
+                        winsound.Beep(1318, 125)
+                        winsound.Beep(1567, 180)
+                    elif sound_type == "error":
+                        winsound.Beep(260, 250)
+                    elif sound_type == "coin":
+                        winsound.Beep(1174, 90)
+                        winsound.Beep(1567, 180)
+                    elif sound_type == "levelup":
+                        winsound.Beep(880, 80)
+                        winsound.Beep(1100, 80)
+                        winsound.Beep(1320, 200)
+                    elif sound_type == "gameover":
+                        winsound.Beep(330, 200)
+                        winsound.Beep(261, 200)
+                        winsound.Beep(196, 400)
+                except Exception:
+                    pass
+            else:
+                # macOS & Linux standard bell response
+                try:
+                    self.bell()
+                except Exception:
+                    pass
+
+        threading.Thread(target=play_beep, daemon=True).start()
 
     def show_frame(self, page_name):
         """Displays the selected frame securely and updates any relevant views."""
@@ -245,10 +294,12 @@ class CookingGameApp(tk.Tk):
             return
         # Cap stack at 6 ingredients max to avoid UI overflow
         if len(self.current_ingredients) < 6:
+            self.play_sound("ingredient")
             self.current_ingredients.append(ing)
             self.frames["GameFrame"].update_prep_board()
 
     def clear_prep_board(self):
+        self.play_sound("click")
         self.current_ingredients = []
         if self.game_active:
             self.frames["GameFrame"].update_prep_board()
@@ -282,6 +333,7 @@ class CookingGameApp(tk.Tk):
     def handle_order_success(self):
         # Stop tick
         self.stop_timer()
+        self.play_sound("success")
         
         # Calculate scores and coins
         diff_mult = 1.0
@@ -312,6 +364,7 @@ class CookingGameApp(tk.Tk):
 
     def handle_order_failure(self, reason):
         self.stop_timer()
+        self.play_sound("error")
         self.lives -= 1
         
         # Flash or alert player
@@ -325,6 +378,7 @@ class CookingGameApp(tk.Tk):
     def game_over(self):
         self.game_active = False
         self.stop_timer()
+        self.play_sound("gameover")
         
         # Check if score qualifies for leaderboard
         qualified = False
@@ -421,15 +475,30 @@ class StartMenuFrame(tk.Frame):
                 bg=BG_PRIMARY,
                 fg=COLOR_DARK,
                 activebackground=BG_SECONDARY,
-                selectcolor="#FFF"
+                selectcolor="#FFF",
+                command=lambda: self.controller.play_sound("click")
             )
             rb.pack(side="left", padx=10, pady=5)
+
+        # Sound Toggle Checkbutton
+        sound_cb = tk.Checkbutton(
+            left_panel,
+            text="🔊 Enable Game Sounds (Beeps)",
+            variable=self.controller.audio_enabled,
+            font=FONT_BODY,
+            bg=BG_PRIMARY,
+            fg=COLOR_DARK,
+            activebackground=BG_SECONDARY,
+            selectcolor="#FFF",
+            command=lambda: self.controller.play_sound("click")
+        )
+        sound_cb.pack(pady=5)
 
         # Action Buttons
         play_btn = tk.Button(
             left_panel, 
             text="▶️ Start Cooking Game", 
-            command=self.controller.start_game, 
+            command=lambda: [self.controller.play_sound("click"), self.controller.start_game()], 
             font=FONT_TITLE, 
             bg=COLOR_SUCCESS, 
             fg="white", 
@@ -439,12 +508,12 @@ class StartMenuFrame(tk.Frame):
             padx=10, 
             pady=10
         )
-        play_btn.pack(fill="x", padx=30, pady=20)
+        play_btn.pack(fill="x", padx=30, pady=15)
 
         shop_btn = tk.Button(
             left_panel, 
             text="🛒 Unlock Recipes Shop", 
-            command=lambda: self.controller.show_frame("ShopFrame"), 
+            command=lambda: [self.controller.play_sound("click"), self.controller.show_frame("ShopFrame")], 
             font=FONT_BODY, 
             bg=COLOR_INFO, 
             fg="white", 
@@ -453,12 +522,12 @@ class StartMenuFrame(tk.Frame):
             relief="flat", 
             pady=6
         )
-        shop_btn.pack(fill="x", padx=30, pady=(0, 10))
+        shop_btn.pack(fill="x", padx=30, pady=(0, 5))
 
         leader_btn = tk.Button(
             left_panel, 
             text="🏆 High Score Leaderboard", 
-            command=lambda: self.controller.show_frame("LeaderboardFrame"), 
+            command=lambda: [self.controller.play_sound("click"), self.controller.show_frame("LeaderboardFrame")], 
             font=FONT_BODY, 
             bg="#8B5CF6", 
             fg="white", 
@@ -467,7 +536,7 @@ class StartMenuFrame(tk.Frame):
             relief="flat", 
             pady=6
         )
-        leader_btn.pack(fill="x", padx=30, pady=10)
+        leader_btn.pack(fill="x", padx=30, pady=5)
 
         # -- RIGHT PANEL: Learn Culinary Guide & Instructions --
         right_panel = tk.LabelFrame(
@@ -915,27 +984,29 @@ class ShopFrame(tk.Frame):
                 purchase_btn.pack(pady=10)
 
     def buy_recipe(self, name, cost):
-        """Unlocks locked recipe as selectable options in future orders."""
-        if self.controller.coins >= cost:
-            self.controller.coins -= cost
-            # Add to list
-            self.controller.unlocked_recipes.append(name)
-            # Update database in memory
-            RECIPES_DATABASE[name]["unlocked"] = True
-            
-            messagebox.showinfo(
-                "Recipe Unlocked!", 
-                f"Congratulations! You can now serve {name}! {RECIPES_DATABASE[name]['emoji']}\\n"
-                "Customers will start requesting it randomly in your games!"
-            )
-            self.on_show()
-        else:
-            messagebox.showerror(
-                "Insufficient Funds", 
-                f"You do not have enough coins!\\n"
-                f"You need {cost} coins, but you only have {self.controller.coins} coins.\\n"
-                f"Serve more delicious dishes to earn coins! 🪙"
-            )
+            """Unlocks locked recipe as selectable options in future orders."""
+            if self.controller.coins >= cost:
+                self.controller.coins -= cost
+                # Add to list
+                self.controller.unlocked_recipes.append(name)
+                # Update database in memory
+                RECIPES_DATABASE[name]["unlocked"] = True
+                self.controller.play_sound("levelup")
+                
+                messagebox.showinfo(
+                    "Recipe Unlocked!", 
+                    f"Congratulations! You can now serve {name}! {RECIPES_DATABASE[name]['emoji']}\\n"
+                    "Customers will start requesting it randomly in your games!"
+                )
+                self.on_show()
+            else:
+                self.controller.play_sound("error")
+                messagebox.showerror(
+                    "Insufficient Funds", 
+                    f"You do not have enough coins!\\n"
+                    f"You need {cost} coins, but you only have {self.controller.coins} coins.\\n"
+                    f"Serve more delicious dishes to earn coins! 🪙"
+                )
 
 
 class LeaderboardFrame(tk.Frame):
@@ -965,7 +1036,7 @@ class LeaderboardFrame(tk.Frame):
         reset_btn = tk.Button(
             controls_frame, 
             text="🧹 Clear Records", 
-            command=self.reset_leaderboard, 
+            command=lambda: [self.controller.play_sound("click"), self.reset_leaderboard()], 
             font=FONT_BODY, 
             bg=COLOR_DANGER, 
             fg="white", 
@@ -978,7 +1049,7 @@ class LeaderboardFrame(tk.Frame):
         back_btn = tk.Button(
             controls_frame, 
             text="⬅️ Back to Main Menu", 
-            command=lambda: self.controller.show_frame("StartMenuFrame"), 
+            command=lambda: [self.controller.play_sound("click"), self.controller.show_frame("StartMenuFrame")], 
             font=FONT_BODY, 
             bg="#6B7280", 
             fg="white", 
